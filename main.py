@@ -1,7 +1,6 @@
-from gameLoop import Game
+from gameLoop import GameLoop   
 
 if __name__ == "__main__":
-    game = Game()
-   
+    game = GameLoop()
 
-
+    game.start()

@@ -1,13 +1,13 @@
 class Robot:
-    x = 0
-    y = 0
-    positions = []
-    has_shot = False
-
-    def __init__(self, x = 0, y = 0, name = "Robot"):
-        self.name = name
+    def __init__(self, x = 0, y = 0):
         self.x = x
         self.y = y
+        self.old_x = 0
+        self.old_y = 0
+        self.positions = []
+        self.has_shot = False
+        self.bump = False
+        self.alive = True
 
     def position(self):
         return (self.x, self.y)
@@ -35,22 +35,20 @@ class Robot:
         self.positions.append(old_position)
 
 
-    def shoot(self, item, direction):
+    def shoot(self, direction) -> tuple:
         self.has_shot = True
 
         if direction == "up":
-            item.y -= 1
-            print(f"Item moved up to position: {item.position()}")
+            arrow_position = (self.x, self.y - 1)
         elif direction == "down":
-            item.y += 1
-            print(f"Item moved down to position: {item.position()}")
+            arrow_position = (self.x, self.y + 1)
         elif direction == "left":
-            item.x -= 1    
-            print(f"Item moved left to position: {item.position()}")   
+            arrow_position = (self.x - 1, self.y)
         elif direction == "right":
-            item.x += 1
-            print(f"Item moved right to position: {item.position()}")
-
+            arrow_position = (self.x + 1, self.y)
+        else:
+            raise ValueError("Invalid direction. Use 'up', 'down', 'left', or 'right'.")
+        return arrow_position                           
 
     def get_the_gold(self):
         return "You got the gold! You win!"
