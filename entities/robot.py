@@ -1,54 +1,68 @@
+from constants import DIRECTIONS
+
 class Robot:
-    def __init__(self, x = 0, y = 0):
+    def __init__(self, x=1, y=1):
+        self.initial_position = (x, y)
         self.x = x
         self.y = y
-        self.old_x = 0
-        self.old_y = 0
-        self.positions = []
-        self.has_shot = False
-        self.bump = False
+        self.record = list()
+        
+        # State tracking
         self.alive = True
+        self.has_shot = False
+        self.found_gold = False  # Fixed: This should start False!
+        self.bumped = False
+        
 
-    def position(self):
+    def position(self) -> tuple:
         return (self.x, self.y)
 
-    def move(self, direction):
-        if direction == "up":
-            self.append_old_position()
-            self.y -= 1
-        elif direction == "down":
-            self.append_old_position()
-            self.y += 1
-        elif direction == "left":
-            self.append_old_position()
-            self.x -= 1
-        elif direction == "right":
-            self.append_old_position()
-            self.x += 1
-        else:
-            raise ValueError("Invalid direction. Use 'up', 'down', 'left', or 'right'.")
+    def set_position(self, x: int, y: int):
+        """Allows you to easily teleport or force-update the robot."""
+        self.x = x
+        self.y = y
 
-    def append_old_position(self):
-        self.old_x = self.x
-        self.old_y = self.y
-        old_position = (self.old_x, self.old_y)
-        self.positions.append(old_position)
+    def move(self, direction: int):
+        # 1. Look up the math in our master dictionary
+        dx, dy = DIRECTIONS[direction]
+        
+        # 3. Apply the movement
+        self.x += dx
+        self.y += dy
 
-
-    def shoot(self, direction) -> tuple:
+    def shoot_arrow(self, direction: int) -> tuple:
         self.has_shot = True
+        
+        # Look up the trajectory from our master dictionary
+        dx, dy = DIRECTIONS[direction]
+        
+        # The arrow starts exactly where the robot is
+        tx = self.x
+        ty = self.y
+        
+        # We can calculate the cell the arrow hits right here
+        target_x = tx + dx
+        target_y = ty + dy
+        
+        return (target_x, target_y)
 
-        if direction == "up":
-            arrow_position = (self.x, self.y - 1)
-        elif direction == "down":
-            arrow_position = (self.x, self.y + 1)
-        elif direction == "left":
-            arrow_position = (self.x - 1, self.y)
-        elif direction == "right":
-            arrow_position = (self.x + 1, self.y)
-        else:
-            raise ValueError("Invalid direction. Use 'up', 'down', 'left', or 'right'.")
-        return arrow_position                           
+    def _append_old_position(self, action: int):
+        """Saves the current position to the history list."""
+        self.record.append([self.x,self.y,action])
 
     def get_the_gold(self):
-        return "You got the gold! You win!"
+        self.found_gold = True
+        
+    def bumped_in_wall(self):
+        self.bumped = True
+        
+    def reset(self):
+        """Fully resets the robot to a brand new state."""
+        self.x, self.y = self.initial_position
+        self.record.clear() # Empty the history
+        
+        self.alive = True
+        self.bumped = False
+        self.has_shot = False 
+        self.found_gold = False 
+    

@@ -1,84 +1,143 @@
 import random
-
+from collections import deque
 class GameMap: 
     def __init__(self):
         self.size = 4
         self.stench = False
-        self.glitter = False
         self.breeze = False
         
-        self.available_positions = [ 
-            (x, y) for x in range(1, self.size + 1) for y in range(1, self.size + 1)
-        ]
+        # Entity trackers
+        self.gold_location = None
+        self.wumpus_location = None
+        self.pit_locations = []
+        
+        self.grid = []
+        self.available_positions = []
 
-        # Remove the starting position (1, 1) from available positions to prevent placing hazards or gold there
-        self.available_positions.remove((1, 1))  
-
-    def set_value(self, position, value):
+    def set_value(self, position: tuple, value: str):
         x, y = position
-        # Restrict writing strictly to the playable area (1 to self.size)
         if 1 <= x <= self.size and 1 <= y <= self.size:
             self.grid[y][x] = value
         else:
             raise IndexError("Coordinates out of bounds")
 
-    def get_value(self, position):
+    def get_value(self, position: tuple) -> str:
         x, y = position
-        # Allow reading from the entire grid (0 to self.size + 1) 
         if 0 <= x <= self.size + 1 and 0 <= y <= self.size + 1:
             return self.grid[y][x]
         else:
             raise IndexError("Coordinates out of bounds")
 
-    def create_grid(self):
+    def create_solvable_grid(self):
+        """Generates random grids until a solvable one is found."""
+        attempts = 0
+        while True:
+            attempts += 1
+            self._generate_random_grid()
+            
+            if self.is_map_solvable():
+                break
+
+    def _generate_random_grid(self):
+        """Builds the 2D array and places entities randomly."""
+        # 1. Reset available positions for this attempt
+        self.available_positions = [ 
+            (x, y) for x in range(1, self.size + 1) for y in range(1, self.size + 1)
+        ]
+        self.available_positions.remove((1, 1))  # Reserve spawn point
+        self.pit_locations.clear()
+
+        # 2. Build empty grid with 'X' borders
         self.grid = []
-        # We need a grid size of (size + 2) to accommodate the walls on both sides.
-        # For size 4, this creates a 6x6 list (indices 0 through 5).
         for y in range(self.size + 2):
             row = []
             for x in range(self.size + 2):
-                # If we are on the first/last row or first/last column, place a wall
                 if y == 0 or y == self.size + 1 or x == 0 or x == self.size + 1:
                     row.append('X')
                 else:
                     row.append('.')
             self.grid.append(row)
 
-        # Spawn robot at the new 1-indexed starting position
+        # 3. Spawn Robot
         self.set_value((1, 1), 'R')
         
-        # Spawn hazards and gold at random positions
-        self.set_value(self.generate_random_position(), 'P')
-        self.set_value(self.generate_random_position(), 'P')
-        self.set_value(self.generate_random_position(), 'G')
-        self.set_value(self.generate_random_position(), 'W')
+        # 4. Spawn Hazards and Gold, saving their locations
+        for _ in range(2):
+            pit_pos = self._pop_random_position()
+            self.set_value(pit_pos, 'P')
+            self.pit_locations.append(pit_pos)
 
-    def display(self):
-        for row in self.grid:
-            print(' '.join(str(cell) for cell in row))
+        self.gold_location = self._pop_random_position()
+        self.set_value(self.gold_location, 'G')
 
-    def update_robot_position(self, old_position, new_position):
-        self.set_value(old_position, '.')
-        self.set_value(new_position, 'R')
+        self.wumpus_location = self._pop_random_position()
+        self.set_value(self.wumpus_location, 'W')
 
-    def generate_random_position(self):
+    def is_map_solvable(self) -> bool:
+        """Uses Breadth-First Search (BFS) to guarantee a path to Gold exists."""
+        start_x, start_y = 1, 1
+        visited = set()
+        visited.add((start_x, start_y))
+        
+        # Queue stores coordinates we need to check
+        queue = deque([(start_x, start_y)])
+        
+        # Movement modifiers (Up, Right, Down, Left)
+        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+        
+        while queue:
+            current_x, current_y = queue.popleft()
+            
+            # Did we find the gold?
+            if self.get_value((current_x, current_y)) == 'G':
+                return True
+                
+            # Check all 4 adjacent directions
+            for dx, dy in directions:
+                new_x, new_y = current_x + dx, current_y + dy
+                
+                if (new_x, new_y) not in visited:
+                    target_cell = self.get_value((new_x, new_y))
+                    
+                    # Only add safe cells to our walk path
+                    if target_cell in ('.', 'G'):
+                        visited.add((new_x, new_y))
+                        queue.append((new_x, new_y))
+                        
+        # If queue empties and we never found 'G', it's impossible
+        return False
+
+    def get_status_based_in_adjacent_cell(self, position: tuple):
+        """Checks the 4 adjacent cells and updates stench and breeze."""
+        x, y = position
+        is_stench = False
+        is_breeze = False
+        
+        # Look Up, Right, Down, Left
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
+            new_x, new_y = x + dx, y + dy
+            
+            # Ensure we don't look outside the physical array
+            if 0 <= new_x <= self.size + 1 and 0 <= new_y <= self.size + 1:
+                target_cell = self.get_value((new_x, new_y))
+                if target_cell == 'W':
+                    is_stench = True
+                elif target_cell == 'P':
+                    is_breeze = True
+                    
+        self.stench = is_stench
+        self.breeze = is_breeze
+
+    def _pop_random_position(self) -> tuple:
+        """Helper to fetch and remove a random coordinate."""
         if not self.available_positions:
             raise ValueError("No available positions left to generate.")
+        
         position = random.choice(self.available_positions)
         self.available_positions.remove(position)
         return position
 
-    # Return the status of the robot based on its current position and the adjacent cells
-    def get_status(self, position):
-        adjacent_cells = self.get_adjacent_cells(position)
-        self.stench = any(self.get_value(cell) == 'W' for cell in adjacent_cells)
-        self.breeze = any(self.get_value(cell) == 'P' for cell in adjacent_cells)
-
-    def get_adjacent_cells(self, position):
-        x, y = position
-        adjacent_cells = []
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            new_x, new_y = x + dx, y + dy
-            if 1 <= new_x <= self.size and 1 <= new_y <= self.size:
-                adjacent_cells.append((new_x, new_y))
-        return adjacent_cells
+    def display(self):
+        self.create_solvable_grid()
+        for row in self.grid:
+            print(' '.join(str(cell) for cell in row))

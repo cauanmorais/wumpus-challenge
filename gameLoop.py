@@ -1,130 +1,130 @@
 import numpy
 from entities.robot import Robot
 from gameMap import GameMap
-class GameLoop:
+from constants import DIRECTIONS
+
+class GameLoop: 
     def __init__(self):
         self.robot = Robot()
         self.game_map = GameMap()
-        self.score = 0.0
-        #Locations to save game state in case of death
-        self.state = {
-            'robot_position': (1,1),
-            'gold_position': (),
-            'wumpus_position': (),
-            'pit_positions': [(),()],
-            'wumpus_alive': True,
-            'maze_exists': False,
-            'score': 0.0   
-        }
+        self.score = 0.0  
         self.mazeExists = False
-        self.goldLocY = 0
-        self.goldLocX = 0
-        # self.resetAgent()
-
+        self.glitter = False # Added this so the glitter variable exists!
+        
+        # FIX 4: Q-Table Array Size Mismatch. 
+        # Using size + 2 accounts for the 'X' wall borders (indices 0 and 5)
+        grid_dim = self.game_map.size + 2
+        self.Q = numpy.ones((grid_dim, grid_dim, 8))
+        self.normalizeQ()
+        
     def start(self):
         # Create a random maze and ensure it is solvable
-        while True:
-            self.makeRandomMaze()
-            if self.mazeExists:
-                break
         self.game_map.display()
+        print("-" * 30) # Visual separator for the terminal
 
-    def update(self):
+    def update_ui(self, oldPosition: tuple, oldValue: str, newPosition: tuple, newValue: str):
+        self.game_map.set_value(oldPosition, oldValue)
+        self.game_map.set_value(newPosition, newValue)
         self.game_map.display()
+        print("-" * 30) # Visual separator for the terminal
+
+    def move_agent(self, action: int):
+        self.score -= 1
+        
+        # 1. Look ahead using our global constants 
+        dx, dy = DIRECTIONS[action]
+        tx = self.robot.x + dx
+        ty = self.robot.y + dy
+
+        # 2. Fetch the target cell only ONCE
+        target_cell = self.game_map.get_value((tx, ty))
+
+        # 3. Handle Wall (Movement fails)
+        if target_cell == 'X':
+            self.robot.bumped_in_wall()
+            self.score -= 10 
+
+        # 4. Handle Death States (Pit or Wumpus)
+        elif target_cell in ('P', 'W'):
+            self.robot.alive = False
+            self.score -= 1000
+            
+        # 5. Handle Safe Movement ('.' or 'G')
+        else:
+            self.game_map.set_value(self.robot.position(), '.')
+            
+            self.robot.move(action)
+            
+            self.game_map.set_value(self.robot.position(), 'R')
+
+            # Check for Gold
+            if target_cell == 'G':
+                self.glitter = True
+                self.robot.get_the_gold()
+                self.score += 1000
+                print("Agent found the gold!")
+
+            # Ask the map to update the Stench and Breeze sensors based on the new location
+            self.game_map.get_status_based_in_adjacent_cell(self.robot.position())
+
+        # 6. Unified Return: Display everything once at the end instead of in every 'if' block
+        self.game_map.display()
+        return self.showCurrentState()
     
-    def is_map_solvable(self):
-        #RandomWalk to check is maze is solvable
-        xm=[0,1,0,-1]
-        ym=[-1,0,1,0]
-        maxSteps = 10000
-        temp_x=1
-        temp_y=1
-        for i in range(maxSteps):
-                #Random action of up,down,left or right
-                action = numpy.random.choice([0,1,2,3])
-                #Is this new position within the bounds of the maze (index of list)?
-                if not (0 <= temp_x + xm[action] < self.game_map.size and 0 <= temp_y + ym[action] < self.game_map.size):
-                    continue
+    def getAction(self, exploration=0.0):
+        # Capture state BEFORE moving
+        current_x = self.robot.x
+        current_y = self.robot.y
 
-                if self.game_map.get_value((temp_x+xm[action], temp_y+ym[action]))=='X':
-                    continue
-
-                #Is this new position a PIT or WUMPUS?
-                if self.game_map.get_value((temp_x+xm[action], temp_y+ym[action]))=='P':
-                    continue
-
-                if self.game_map.get_value((temp_x+xm[action], temp_y+ym[action]))=='W':
-                    continue
-                else:
-                    #new position is '.' or 'G'
-                    temp_x=temp_x+xm[action]
-                    temp_y=temp_y+ym[action]
-                    #If we found 'G' by only walking on '.', the maze is solvable
-                    if self.game_map.get_value((temp_x, temp_y))=='G':
-                        print(f"Maze solvable was found in {i + 1 } steps")
-                        return True
-        #Couldnt reach 'G' by following only '.'
-        return False
-
-    def makeRandomMaze(self):
-        while not self.mazeExists:
-            self.game_map.create_grid()
-            self.mazeExists = self.is_map_solvable()
-
-    def resetAgent(self):
-       pass
+        # Checks if random (0-1) is less than exploration
+        if numpy.random.random() < exploration:
+            action = numpy.random.choice([0,1,2,3,4,5,6,7])
+        else:
+            # Takes action based on our Q-tables probabilities
+            action = numpy.random.choice([0,1,2,3,4,5,6,7], p=self.Q[current_x][current_y])        
+            
+        # FIX 5: Typo corrected from moveAgent to move_agent
+        if action < 4:
+            self.move_agent(action)
+        else:
+            self.robot.shoot_arrow(action - 4)
+            
+        # Safety fix for your record: Needs x, y, and action so updatePolicy doesn't crash!
+        self.robot.record.append((current_x, current_y, action))
+        return action
         
-    def moveAgent(self, action):
-        #Action = move up,down,left or right
-        robotPos = [(self.robot.x, self.robot.y)]
-        self.score = self.score-1
-        xm = [0,1,0,-1]
-        ym = [-1,0,1,0]
-        tx = self.robot.x+xm[action]
-        ty = self.robot.y+ym[action]
+    def normalizeQ(self):
+        # 1. Get the sum of actions for every cell at once
+        sums = self.Q.sum(axis=-1, keepdims=True)
         
-        #If current position is Gold
-        if self.game_map.get_value((tx, ty)) == 'G':
-            self.glitter=True
-            self.score=self.score+1000
-            self.goldLocY=ty
-            self.goldLocX=tx
-            print("Agent found the gold!")
-        
-        if self.game_map.get_value((tx, ty)) != 'G':
-            self.glitter=False
-        #If current position is a wall, returns bump
-        if self.game_map.get_value((tx, ty)) == 'X':
-            self.bump=True
-            print(self.game_map.get_value((tx, ty)))
-            return "Alive: ",self.alive,"Bump: ",self.bump,"Stench: ",self.stench,"Glitter: ", self.glitter,"Breeze: ",self.breeze,"Score: ",self.score
+        # 2. Divide, safely handling the zeroes
+        self.Q = numpy.divide(self.Q, sums, out=numpy.full_like(self.Q, 1.0 / self.Q.shape[-1]), where=(sums != 0))
+                    
+    def updatePolicy(self, learningRate=0.001):
+        if self.robot.alive == True and self.score > 1000:
+            for x, y, a in self.robot.record:
+                self.Q[x][y][a] += learningRate
         else:
-            self.bump=False
-        #If new position is not a wall, current position becomes '.'
-        if self.game_map.get_value((tx, ty)) != 'X':
-            self.game_map.set_value((self.xPos, self.yPos), '.')
-            self.xPos=tx
-            self.yPos=ty
-        #If we walk on Pit or Wumpus, we die, lose points and reset the agent/game state    
-        if self.game_map.get_value((self.xPos, self.yPos)) == 'P' or self.game_map.get_value((self.xPos, self.yPos)) == 'W':
-            self.alive=False
-            self.score=self.score-1000
-            return self.resetAgent()  
-        else:
-            #New position becomes 'A'(Agent)
-            self.game_map.set_value((self.xPos, self.yPos), 'A')
-        #If adjacent nodes to new position is a Pit    
-        if self.game_map.get_status == "B":
-            self.breeze=True
-        else:
-            self.breeze=False
-        #If adjacent nodes to new position is a Wumpus
-        if self.game_map.get_status == "W":
-            self.stench=True
-        else:
-            self.stench=False
-        #Returns maze and sensors
-        print(self.game_map)
-        print("Current Position of A: ",self.robot.position())
-        return "Alive: ",self.alive,"Bump: ",self.bump,"Stench: ",self.stench,"Glitter: ", self.glitter,"Breeze: ",self.breeze,"Score: ",self.score
+            for x, y, a in self.robot.record:
+                if self.Q[x][y][a] > 0.1:
+                    self.Q[x][y][a] -= learningRate
+                    
+        self.normalizeQ()
+        self.robot.record.clear()
 
+    def showCurrentState(self):
+        print(f"Current Position of R: {self.robot.position()}")
+        
+        # I updated these variable names to match the new GameMap refactor we did earlier
+        print(f"Current Position of G: {getattr(self.game_map, 'gold_location', 'Unknown')}")
+        print(f"Current Position of P: {getattr(self.game_map, 'pit_locations', 'Unknown')}")
+        print(f"Current Position of W: {getattr(self.game_map, 'wumpus_location', 'Unknown')}")
+        
+        print(f"Current Score: {self.score}")
+        print(f"Robot Alive: {self.robot.alive}")
+        print(f"Robot Bump: {self.robot.bumped}")
+        
+        # FIX 3: Pull stench and breeze directly from game_map
+        print(f"Stench: {self.game_map.stench}")
+        print(f"Breeze: {self.game_map.breeze}")
+        print("-" * 30)
