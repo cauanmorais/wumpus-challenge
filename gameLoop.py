@@ -9,24 +9,21 @@ class GameLoop:
         self.game_map = GameMap()
         self.score = 0.0  
         self.mazeExists = False
-        self.glitter = False # Added this so the glitter variable exists!
         
-        # FIX 4: Q-Table Array Size Mismatch. 
-        # Using size + 2 accounts for the 'X' wall borders (indices 0 and 5)
-        grid_dim = self.game_map.size + 2
-        self.Q = numpy.ones((grid_dim, grid_dim, 8))
+        grid_dimensions = self.game_map.size + 2
+        self.Q = numpy.ones((grid_dimensions, grid_dimensions, 8))
         self.normalizeQ()
         
     def start(self):
         # Create a random maze and ensure it is solvable
+        self.game_map.create_solvable_grid()
         self.game_map.display()
-        print("-" * 30) # Visual separator for the terminal
+        
 
     def update_ui(self, oldPosition: tuple, oldValue: str, newPosition: tuple, newValue: str):
         self.game_map.set_value(oldPosition, oldValue)
         self.game_map.set_value(newPosition, newValue)
-        self.game_map.display()
-        print("-" * 30) # Visual separator for the terminal
+        
 
     def move_agent(self, action: int):
         self.score -= 1
@@ -43,14 +40,17 @@ class GameLoop:
         if target_cell == 'X':
             self.robot.bumped_in_wall()
             self.score -= 10 
+            print(f"Robot bumped into a wall, trying to move to {tx,ty}")
 
         # 4. Handle Death States (Pit or Wumpus)
         elif target_cell in ('P', 'W'):
             self.robot.alive = False
             self.score -= 1000
+            print(f"Robot died, trying to move to {tx,ty}")
             
         # 5. Handle Safe Movement ('.' or 'G')
         else:
+            print("Safe movement, the map should be updated")
             self.game_map.set_value(self.robot.position(), '.')
             
             self.robot.move(action)
@@ -59,7 +59,6 @@ class GameLoop:
 
             # Check for Gold
             if target_cell == 'G':
-                self.glitter = True
                 self.robot.get_the_gold()
                 self.score += 1000
                 print("Agent found the gold!")
@@ -85,9 +84,17 @@ class GameLoop:
             
         # FIX 5: Typo corrected from moveAgent to move_agent
         if action < 4:
+            print("Robot will try to move")
             self.move_agent(action)
-        else:
-            self.robot.shoot_arrow(action - 4)
+        elif action > 4 and not self.robot.has_shot:
+            arrow_position = self.robot.shoot_arrow(action - 4)
+            print(f"Robot shoot an arrow to {arrow_position}")
+
+            if self.game_map.get_value(arrow_position) == "W":
+                self.score += 1000
+                print("The robot killed the monster, yeah!!")
+        elif action > 4:
+             print("Robot tried to shoot an arrow, but it had already shooted")
             
         # Safety fix for your record: Needs x, y, and action so updatePolicy doesn't crash!
         self.robot.record.append((current_x, current_y, action))
@@ -101,7 +108,7 @@ class GameLoop:
         self.Q = numpy.divide(self.Q, sums, out=numpy.full_like(self.Q, 1.0 / self.Q.shape[-1]), where=(sums != 0))
                     
     def updatePolicy(self, learningRate=0.001):
-        if self.robot.alive == True and self.score > 1000:
+        if self.robot.alive == True and self.score > 950:
             for x, y, a in self.robot.record:
                 self.Q[x][y][a] += learningRate
         else:
@@ -115,16 +122,11 @@ class GameLoop:
     def showCurrentState(self):
         print(f"Current Position of R: {self.robot.position()}")
         
-        # I updated these variable names to match the new GameMap refactor we did earlier
-        print(f"Current Position of G: {getattr(self.game_map, 'gold_location', 'Unknown')}")
-        print(f"Current Position of P: {getattr(self.game_map, 'pit_locations', 'Unknown')}")
-        print(f"Current Position of W: {getattr(self.game_map, 'wumpus_location', 'Unknown')}")
-        
         print(f"Current Score: {self.score}")
         print(f"Robot Alive: {self.robot.alive}")
         print(f"Robot Bump: {self.robot.bumped}")
         
-        # FIX 3: Pull stench and breeze directly from game_map
         print(f"Stench: {self.game_map.stench}")
         print(f"Breeze: {self.game_map.breeze}")
-        print("-" * 30)
+
+        print(" = " * 50)

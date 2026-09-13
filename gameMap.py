@@ -138,6 +138,6 @@ class GameMap:
         return position
 
     def display(self):
-        self.create_solvable_grid()
         for row in self.grid:
             print(' '.join(str(cell) for cell in row))
+        print()
