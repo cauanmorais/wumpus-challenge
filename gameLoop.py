@@ -9,14 +9,19 @@ class GameLoop:
         self.game_map = GameMap()
         self.score = 0.0  
         self.mazeExists = False
+        self.monsterKilledCounter = 0
         
         grid_dimensions = self.game_map.size + 2
         self.Q = numpy.ones((grid_dimensions, grid_dimensions, 8))
         self.normalizeQ()
-        
+
     def start(self):
-        # Create a random maze and ensure it is solvable
         self.game_map.create_solvable_grid()
+        self.game_map.display()
+        
+    def start_random(self):
+        # Create a random maze and ensure it is solvable
+        self.game_map.create_random_solvable_grid()
         self.game_map.display()
         
 
@@ -66,9 +71,7 @@ class GameLoop:
             # Ask the map to update the Stench and Breeze sensors based on the new location
             self.game_map.get_status_based_in_adjacent_cell(self.robot.position())
 
-        # 6. Unified Return: Display everything once at the end instead of in every 'if' block
-        self.game_map.display()
-        return self.showCurrentState()
+        
     
     def getAction(self, exploration=0.0):
         # Capture state BEFORE moving
@@ -92,6 +95,7 @@ class GameLoop:
 
             if self.game_map.get_value(arrow_position) == "W":
                 self.score += 1000
+                self.monsterKilledCounter += 1
                 print("The robot killed the monster, yeah!!")
         elif action > 4:
              print("Robot tried to shoot an arrow, but it had already shooted")
@@ -118,6 +122,23 @@ class GameLoop:
                     
         self.normalizeQ()
         self.robot.record.clear()
+
+    def reset_game(self): 
+        # 1. Reset the environment for the new episode
+        old_pos = self.robot.position()
+        robot_found_gold = self.robot.found_gold
+        
+        self.robot.reset()
+        self.score = 0.0
+                
+        new_pos = self.robot.position() 
+                
+        if old_pos != new_pos and not robot_found_gold:
+            self.update_ui(oldPosition=old_pos, oldValue='.', newPosition=new_pos, newValue='R')
+        #If the robot found the gold, the last position is G not .
+        elif old_pos != new_pos and robot_found_gold:
+            self.update_ui(oldPosition=old_pos, oldValue='G', newPosition=new_pos, newValue='R')
+
 
     def showCurrentState(self):
         print(f"Current Position of R: {self.robot.position()}")

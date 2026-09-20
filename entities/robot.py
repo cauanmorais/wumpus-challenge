@@ -1,7 +1,7 @@
 from constants import DIRECTIONS
 
 class Robot:
-    def __init__(self, x=1, y=1):
+    def __init__(self, x = 1, y = 4):
         self.initial_position = (x, y)
         self.x = x
         self.y = y
