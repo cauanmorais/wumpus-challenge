@@ -10,7 +10,7 @@ class Robot:
         # State tracking
         self.alive = True
         self.has_shot = False
-        self.found_gold = False  # Fixed: This should start False!
+        self.found_gold = False  
         self.bumped = False
         
 

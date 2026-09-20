@@ -1,5 +1,6 @@
 import random
 from collections import deque
+
 class GameMap: 
     def __init__(self):
         self.size = 4
@@ -45,7 +46,9 @@ class GameMap:
             if self.is_map_solvable():
                 break
             else: 
+                print()
                 print("O mapa é impossível de resolver, tente novamente")
+                print()
 
     def _generate_random_grid(self):
         """Builds the 2D array and places entities randomly."""
@@ -117,38 +120,77 @@ class GameMap:
             self.gold_location = self._get_tuple_data_from_user_input("Ouro")
             self.set_value(self.gold_location, 'G')
 
+    def load_test_map(self, config: dict):
+        """Monta o grid estático baseado em um dicionário de configuração."""
+        self.size = config['size']
+        
+        # 1. Limpa posições antigas
+        self.pit_locations.clear()
+        
+        # 2. Constrói o grid vazio com paredes 'X'
+        self.grid = []
+        for y in range(self.size + 2):
+            row = []
+            for x in range(self.size + 2):
+                if y == 0 or y == self.size + 1 or x == 0 or x == self.size + 1:
+                    row.append('X')
+                else:
+                    row.append('.')
+            self.grid.append(row)
+
+        # 3. Posiciona o Robô
+        self.set_value(self.robot_initial_position, 'R')
+        
+        # 4. Posiciona os Elementos Exatos do Dicionário
+        self.gold_location = config['gold']
+        self.set_value(self.gold_location, 'G')
+        
+        self.wumpus_location = config['wumpus']
+        self.set_value(self.wumpus_location, 'W')
+        
+        for pit in config['pits']:
+            self.set_value(pit, 'P')
+            self.pit_locations.append(pit)
+
     def is_map_solvable(self) -> bool:
-        """Uses Breadth-First Search (BFS) to guarantee a path to Gold exists."""
-        start_x, start_y = 1, 1
-        visited = set()
-        visited.add((start_x, start_y))
+        """Usa BFS para garantir que o mapa tem solução, considerando que o robô pode matar 1 Wumpus."""
+        start_x, start_y = self.robot_initial_position
         
-        # Queue stores coordinates we need to check
-        queue = deque([(start_x, start_y)])
+        start_state: tuple[int, int, bool] = (start_x, start_y, True)
         
-        # Movement modifiers (Up, Right, Down, Left)
+        visited: set[tuple[int, int, bool]] = set()
+        visited.add(start_state)
+        
+        queue: deque[tuple[int, int, bool]] = deque([start_state])
         directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]
         
         while queue:
-            current_x, current_y = queue.popleft()
+            current_x, current_y, tem_flecha = queue.popleft()
             
-            # Did we find the gold?
+            # Achou o ouro?
             if self.get_value((current_x, current_y)) == 'G':
                 return True
                 
-            # Check all 4 adjacent directions
+            # Verifica as 4 direções adjacentes
             for dx, dy in directions:
                 new_x, new_y = current_x + dx, current_y + dy
+                target_cell = self.get_value((new_x, new_y))
                 
-                if (new_x, new_y) not in visited:
-                    target_cell = self.get_value((new_x, new_y))
-                    
-                    # Only add safe cells to our walk path
-                    if target_cell in ('.', 'G'):
-                        visited.add((new_x, new_y))
-                        queue.append((new_x, new_y))
+                # CASO 1: A célula é segura (caminho livre ou Ouro)
+                if target_cell in ('.', 'G'):
+                    new_state = (new_x, new_y, tem_flecha)
+                    if new_state not in visited:
+                        visited.add(new_state)
+                        queue.append(new_state)
                         
-        # If queue empties and we never found 'G', it's impossible
+                # CASO 2: A célula tem o Wumpus, E o robô ainda TEM a flecha!
+                elif target_cell == 'W' and tem_flecha:
+                    new_state = (new_x, new_y, False)
+                    if new_state not in visited:
+                        visited.add(new_state)
+                        queue.append(new_state)
+                        
+        # Se a fila esvaziar e não achou 'G', é impossível resolver
         return False
 
     def get_status_based_in_adjacent_cell(self, position: tuple):
